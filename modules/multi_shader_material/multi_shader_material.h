@@ -37,7 +37,7 @@ public:
 		HashMap<String, Data*> m_data;
 		Mutex* m_mutex = NULL;
 
-		static String _get_shader_key(const Ref<Shader>& p_shader);
+		
 		bool _has_shader_data(const String& p_key) const;
 		ShaderParseData* _get_shader_data(const String& p_key) const;
 		void _add_shader_data(const String& p_key, ShaderParseData* p_value, MultiShaderMaterial* const p_user);
@@ -52,18 +52,19 @@ public:
 		void unlock() const;
 
 		static int _get_first_pos(const String& p_code, int p_pos);
-		static ShaderParseData* _parse_shader(const Ref<Shader>& p_shader);
+		static ShaderParseData* _parse_shader(const Ref<Shader>& p_shader, const String& p_head);
 		static void MultiShaderMaterial::ShaderManager::_get_node_var_names(ShaderLanguage::Node* p_node, int p_level, Set<StringName>& r_var_names,
 			const Map<StringName, ShaderLanguage::BuiltInInfo>& p_builtInVars);
 	protected:
 		static void _bind_methods();
 
 	public:
-		void _shader_changed(const String& p_key, const Ref<Shader>& p_shader);
+		void _shader_changed(const Ref<Shader>& p_shader);
 
-		ShaderParseData* use_shader(const Ref<Shader>& p_shader, MultiShaderMaterial* const p_material);
-		void unuse_shader(const Ref<Shader>& p_shader, MultiShaderMaterial* const p_material);
-		bool has_shader_data(const Ref<Shader>& p_shader) const;
+		ShaderParseData* use_shader(const Ref<Shader>& p_shader, int p_shaderId,MultiShaderMaterial* const p_material);
+		void unuse_shader(const Ref<Shader>& p_shader, int p_shaderId, MultiShaderMaterial* const p_material);
+		bool has_shader_data(const Ref<Shader>& p_shader, int p_shaderId) const;
+		static String get_shader_key(const Ref<Shader>& p_shader, int p_shaderId);
 
 		ShaderManager() { m_mutex = Mutex::create(); };
 		~ShaderManager() { if (m_mutex) memdelete(m_mutex); };
@@ -73,6 +74,7 @@ protected:
 	static ShaderManager* g_shaderManager;
 
 	Vector<Ref<Shader>> m_shaders;
+	Vector<int> m_shaderIds;
 	List<Ref<Shader>> m_usingShaders;
 	Ref<Shader> m_shader;
 
@@ -89,7 +91,7 @@ protected:
 public:
 	static ShaderManager*& get_shader_manager();
 
-	void _shader_changed(const Ref<Shader>& p_shader, ShaderParseData* const p_data);
+	void _shader_changed(const Ref<Shader>& p_shader, bool p_isParse);
 	void _unusing_shader_changed(const Ref<Shader>& p_shader);
 	
 	virtual Shader::Mode get_shader_mode() const;
@@ -100,12 +102,11 @@ public:
 	Ref<Shader> get_shader(int p_index) const;						// 返回指定位置的着色器
 	int get_shader_count() const;									// 返回着色器數量
 	void insert_shader(const Ref<Shader>& p_shader, int p_pos);		// 在指定位置插入着色器
-	void move_shader(const Ref<Shader>& p_shader, int p_pos);		// 移动着色器到指定位置
+	void move_shader(int p_index, int p_pos);						// 移动着色器到指定位置
 	void clear_shader();											// 刪除全部着色器
-	void remove_shader(const Ref<Shader>& p_shader);				// 移除指定着色器
-	void remove_shader_by_index(int p_index);						// 移除指定位置的着色器
-	void set_shader_param(const StringName& p_param, const Variant& p_value, const Ref<Shader>& p_shader);
-	Variant get_shader_param(const StringName& p_param, const Ref<Shader>& p_shader) const;
+	void remove_shader(int p_index);								// 移除指定位置的着色器
+	void set_shader_param(const StringName& p_param, const Variant& p_value, int p_index);
+	Variant get_shader_param(const StringName& p_param, int p_index) const;
 
 	MultiShaderMaterial();
 	virtual ~MultiShaderMaterial();

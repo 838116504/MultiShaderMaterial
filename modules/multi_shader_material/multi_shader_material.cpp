@@ -5,11 +5,11 @@
 MultiShaderMaterial::ShaderManager* MultiShaderMaterial::g_shaderManager = NULL;
 const String SHADER_MAIN_FUNC_NAMES[] = { "vertex", "fragment", "light" };
 
-inline String MultiShaderMaterial::ShaderManager::_get_shader_key(const Ref<Shader>& p_shader)
+inline String MultiShaderMaterial::ShaderManager::get_shader_key(const Ref<Shader>& p_shader, int p_shaderId)
 {
-	if (p_shader->get_path() != "")
-		return p_shader->get_path();
-	return Variant(p_shader->get_instance_id());
+	//if (p_shader->get_path() != "")
+	//	return p_shader->get_path();
+	return String("_") + String(Variant(p_shader->get_instance_id())) + "_" + Variant(p_shaderId) + "_";
 }
 
 inline bool MultiShaderMaterial::ShaderManager::_has_shader_data(const String& p_key) const
@@ -135,7 +135,7 @@ int MultiShaderMaterial::ShaderManager::_get_first_pos(const String& p_code, int
 }
 
 
-MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse_shader(const Ref<Shader>& p_shader)
+MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse_shader(const Ref<Shader>& p_shader, const String& p_head)
 {
 	String code = p_shader->get_code();
 	VS::ShaderMode type = (VS::ShaderMode)p_shader->get_mode();
@@ -194,7 +194,6 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse
 	String varPrev = "[^a-zA-Z0-9_]?";
 	String varNext = "[^a-zA-Z0-9_\\(]?";
 	Array result;
-	String head = String("_") + Variant(p_shader->get_instance_id()) + "_";
 	int start;
 	
 	String fn;
@@ -283,7 +282,7 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse
 
 					int funcLen = SHADER_MAIN_FUNC_NAMES[f].length() + 1;
 					code = code.insert(start + funcLen, param);
-					code = code.insert(start, head);
+					code = code.insert(start, p_head);
 				}
 				processed = true;
 				break;
@@ -299,7 +298,7 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse
 				{
 					++start;
 				}
-				code = code.insert(start, head);
+				code = code.insert(start, p_head);
 			}
 		}
 	}
@@ -341,7 +340,7 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse
 			{
 				++start;
 			}
-			code = code.insert(start, head);
+			code = code.insert(start, p_head);
 		}
 	}
 
@@ -513,62 +512,91 @@ void MultiShaderMaterial::ShaderManager::_get_node_var_names(ShaderLanguage::Nod
 
 void MultiShaderMaterial::ShaderManager::_bind_methods()
 {
-	ClassDB::bind_method(D_METHOD("_shader_changed", "key", "shader"), &MultiShaderMaterial::ShaderManager::_shader_changed);
+	ClassDB::bind_method(D_METHOD("_shader_changed", "shader"), &MultiShaderMaterial::ShaderManager::_shader_changed);
 }
 
 // 着色器changed信号處理︰重新解析着色器，通知所有使用該着色器的Material
-void MultiShaderMaterial::ShaderManager::_shader_changed(const String& p_key, const Ref<Shader>& p_shader)
+void MultiShaderMaterial::ShaderManager::_shader_changed(const Ref<Shader>& p_shader)
 {
-	ShaderParseData* newData = _parse_shader(p_shader);
-	String key = _get_shader_key(p_shader);
-
 	lock();
-	if (!_has_shader_data(p_key))
+	String keyPrefix = String("_") + Variant(p_shader->get_instance_id()) + "_";
+	Vector<String> keys;
+	Vector<ShaderParseData*> newData;
+	List<String> keyList;
+	m_data.get_key_list(&keyList);
+	for (auto e = keyList.front(); e; e = e->next())
 	{
-		unlock();
-		return;
+		if (e->get().begins_with(keyPrefix))
+		{
+			keys.push_back(e->get());
+			newData.push_back(_parse_shader(p_shader, e->get()));
+		}
 	}
-	ShaderParseData* oldData = _get_shader_data(p_key);
-	auto users = _get_shader_data_users(p_key);
 
-	for (auto e = users.front(); e; e = e->next())
+	if (keys.size() <= 0)
 	{
-		e->get()->_shader_changed(p_shader, newData);
-	}
-
-	if (newData)
-	{
-		_add_shader_data(key, newData, users);
-		
-		if (key != p_key)
+		if (p_shader->is_connected("changed", this, "_shader_changed"))
 		{
 			Ref<Shader> s = p_shader;
 			s->disconnect("changed", this, "_shader_changed");
-			Vector<Variant> param;
-			param.push_back(key);
-			param.push_back(p_shader);
-			s->connect("changed", this, "_shader_changed", param);
-			_remove_shader_data(p_key);
+		}
+		unlock();
+		return;
+	}
+
+	if (newData[0])
+	{
+		Set<MultiShaderMaterial*> users;
+		for (int i = 0; i < keys.size(); ++i)
+		{
+			auto u = _get_shader_data_users(keys[i]);
+			_add_shader_data(keys[i], newData[i], u);
+
+			for (auto e = u.front(); e; e = e->next())
+			{
+				users.insert(e->get());
+			}
+		}
+		for (auto e = users.front(); e; e = e->next())
+		{
+			e->get()->_shader_changed(p_shader, true);
 		}
 	}
 	else
 	{
-		Ref<Shader> s = p_shader;
-		s->disconnect("changed", this, "_shader_changed");
-		_remove_shader_data(p_key);
+		Set<MultiShaderMaterial*> users;
+		for (int i = 0; i < keys.size(); ++i)
+		{
+			_remove_shader_data(keys[i]);
+			auto u = _get_shader_data_users(keys[i]);
+			for (auto e = u.front(); e; e = e->next())
+			{
+				users.insert(e->get());
+			}
+		}
+		for (auto e = users.front(); e; e = e->next())
+		{
+			e->get()->_shader_changed(p_shader, false);
+		}
+		if (p_shader->is_connected("changed", this, "_shader_changed"))
+		{
+			Ref<Shader> s = p_shader;
+			s->disconnect("changed", this, "_shader_changed");
+		}
 	}
+	
 	unlock();
 }
 
 // 获取指定着色器解析数据和为指定Material注冊使用
-MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::use_shader(const Ref<Shader>& p_shader, MultiShaderMaterial* const p_material)
+MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::use_shader(const Ref<Shader>& p_shader, int p_shaderId, MultiShaderMaterial* const p_material)
 {
 	lock();
-	String key = _get_shader_key(p_shader);
+	String key = get_shader_key(p_shader, p_shaderId);
 	ShaderParseData* data;
 	if (!_has_shader_data(key))
 	{
-		data = _parse_shader(p_shader);
+		data = _parse_shader(p_shader, key);
 		if (data == NULL)
 		{
 			unlock();
@@ -576,11 +604,13 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::use_sh
 		}
 			
 		_add_shader_data(key, data, p_material);
-		Vector<Variant> param;
-		param.push_back(key);
-		param.push_back(p_shader);
-		Ref<Shader> s = p_shader;
-		s->connect("changed", this, "_shader_changed", param);
+		if (!p_shader->is_connected("changed", this, "_shader_changed"))
+		{
+			Vector<Variant> param;
+			param.push_back(p_shader);
+			Ref<Shader> s = p_shader;
+			s->connect("changed", this, "_shader_changed", param);
+		}
 	}
 	else
 	{
@@ -592,10 +622,10 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::use_sh
 }
 
 // 指定Material注銷使用指定着色器(不再通知修改，如果沒人用就釋放解析数据)
-void MultiShaderMaterial::ShaderManager::unuse_shader(const Ref<Shader>& p_shader, MultiShaderMaterial* const p_material)
+void MultiShaderMaterial::ShaderManager::unuse_shader(const Ref<Shader>& p_shader, int p_shaderId, MultiShaderMaterial* const p_material)
 {
 	lock();
-	String key = _get_shader_key(p_shader);
+	String key = get_shader_key(p_shader, p_shaderId);
 	if (!_has_shader_data_user(key, p_material))
 	{
 		unlock();
@@ -607,10 +637,10 @@ void MultiShaderMaterial::ShaderManager::unuse_shader(const Ref<Shader>& p_shade
 	unlock();
 }
 
-bool MultiShaderMaterial::ShaderManager::has_shader_data(const Ref<Shader>& p_shader) const
+bool MultiShaderMaterial::ShaderManager::has_shader_data(const Ref<Shader>& p_shader, int p_shaderId) const
 {
 	lock();
-	bool ret = _has_shader_data(_get_shader_key(p_shader));
+	bool ret = _has_shader_data(get_shader_key(p_shader, p_shaderId));
 	unlock();
 	return ret;
 }
@@ -624,12 +654,11 @@ void MultiShaderMaterial::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_shader", "index"), &MultiShaderMaterial::get_shader, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("get_shader_count"), &MultiShaderMaterial::get_shader_count);
 	ClassDB::bind_method(D_METHOD("insert", "shader", "pos"), &MultiShaderMaterial::insert_shader, DEFVAL(-1));
-	ClassDB::bind_method(D_METHOD("move", "shader", "pos"), &MultiShaderMaterial::move_shader);
+	ClassDB::bind_method(D_METHOD("move", "index", "pos"), &MultiShaderMaterial::move_shader);
 	ClassDB::bind_method(D_METHOD("clear"), &MultiShaderMaterial::clear_shader);
-	ClassDB::bind_method(D_METHOD("remove", "shader"), &MultiShaderMaterial::remove_shader);
-	ClassDB::bind_method(D_METHOD("remove_by_index", "index"), &MultiShaderMaterial::remove_shader_by_index);
-	ClassDB::bind_method(D_METHOD("set_shader_param", "param", "value", "shader"), &MultiShaderMaterial::set_shader_param, DEFVAL(Ref<Shader>()));
-	ClassDB::bind_method(D_METHOD("get_shader_param", "param", "shader"), &MultiShaderMaterial::get_shader_param, DEFVAL(Ref<Shader>()));
+	ClassDB::bind_method(D_METHOD("remove", "index"), &MultiShaderMaterial::remove_shader);
+	ClassDB::bind_method(D_METHOD("set_shader_param", "param", "value", "index"), &MultiShaderMaterial::set_shader_param, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("get_shader_param", "param", "index"), &MultiShaderMaterial::get_shader_param, DEFVAL(-1));
 
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "shaders", PROPERTY_HINT_NONE, String(Variant(Variant::OBJECT)) + "/" + Variant(PROPERTY_HINT_RESOURCE_TYPE) + ":Shader",
 		PROPERTY_USAGE_DEFAULT), "set_shaders", "get_shaders");
@@ -661,7 +690,7 @@ StringName MultiShaderMaterial::_get_shader_param_name(const StringName& p_name)
 	if (i < 0 || i >= m_shaders.size() || m_shaders[i].is_null())
 		return StringName();
 
-	return String("_") + Variant(m_shaders[i]->get_instance_id()).operator String() + "_" + name.substr(find + 1 + strlen("shader_param/"));
+	return g_shaderManager->get_shader_key(m_shaders[i], m_shaderIds[i]) + name.substr(find + 1 + strlen("shader_param/"));
 }
 
 bool MultiShaderMaterial::_set(const StringName& p_name, const Variant& p_value)
@@ -704,8 +733,9 @@ void MultiShaderMaterial::_get_property_list(List<PropertyInfo>* p_list) const
 		if (m_usingShaders.size() > 1)
 		{
 			Ref<RegEx> regex = memnew(RegEx);
-			regex->compile("_(?<id>[0-9]*)_");
+			regex->compile("_(?<id>[0-9]*)_(?<id2>[0-9]*)_");
 			ObjectID id;
+			int id2;
 			Ref<RegExMatch> match;
 			int len;
 			for (auto e = p_list->front(); e;)
@@ -719,10 +749,11 @@ void MultiShaderMaterial::_get_property_list(List<PropertyInfo>* p_list) const
 					continue;
 				}
 				id = Variant(match->get_string("id"));
+				id2 = Variant(match->get_string("id2"));
 				len = m_shaders.size();
 				for (int i = 0; i < len; ++i)
 				{
-					if (m_shaders[i].is_valid() && id == m_shaders[i]->get_instance_id())
+					if (m_shaders[i].is_valid() && id == m_shaders[i]->get_instance_id() && id2 == m_shaderIds[i])
 					{
 						if (e->get().name.find("param/") == 0)
 						{ //backwards compatibility
@@ -778,9 +809,9 @@ MultiShaderMaterial::ShaderManager*& MultiShaderMaterial::get_shader_manager()
 	return g_shaderManager;
 }
 
-void MultiShaderMaterial::_shader_changed(const Ref<Shader>& p_shader, ShaderParseData* const p_data)
+void MultiShaderMaterial::_shader_changed(const Ref<Shader>& p_shader, bool p_isParse)
 {
-	if (m_usingShaders.size() == 0 && !p_data)
+	if (m_usingShaders.size() == 0 && !p_isParse)
 		return;
 
 	if (!m_usingShaders.find(p_shader) && p_shader->get_mode() != m_usingShaders.front()->get()->get_mode())
@@ -791,22 +822,28 @@ void MultiShaderMaterial::_shader_changed(const Ref<Shader>& p_shader, ShaderPar
 
 void MultiShaderMaterial::_unusing_shader_changed(const Ref<Shader>& p_shader)
 {
-	if (p_shader.is_valid() && g_shaderManager->use_shader(p_shader, this))
+	if (p_shader.is_null())
+		return;
+	int find = m_shaders.find(p_shader);
+	if (find < 0)
+		return;
+
+	if (g_shaderManager->use_shader(p_shader, m_shaderIds[find], this))
 		_update();
 }
 
 void MultiShaderMaterial::_update()
 {
 	Shader::Mode type;
-	m_usingShaders.clear();
-
 	int count = m_shaders.size();
+	m_usingShaders.clear();
+	Vector<int> usingShaderId;
 	for (int i = 0; i < count; ++i)
 	{
 		if (m_shaders[i].is_null())
 			continue;
 
-		if (!g_shaderManager->use_shader(m_shaders[i], this))
+		if (!g_shaderManager->use_shader(m_shaders[i], m_shaderIds[i], this))
 		{
 			if (!m_shaders[i]->is_connected("changed", this, "_unusing_shader_changed"))
 			{
@@ -825,11 +862,13 @@ void MultiShaderMaterial::_update()
 		if (m_usingShaders.size() == 0)
 		{
 			m_usingShaders.push_back(m_shaders[i]);
+			usingShaderId.push_back(m_shaderIds[i]);
 			type = m_shaders[i]->get_mode();
 		}
 		else if (type == m_shaders[i]->get_mode())
 		{
 			m_usingShaders.push_back(m_shaders[i]);
+			usingShaderId.push_back(m_shaderIds[i]);
 		}
 	}
 
@@ -864,16 +903,17 @@ void MultiShaderMaterial::_update()
 	else
 	{
 		String code = "shader_type " + ShaderLanguage::get_shader_type(m_usingShaders.front()->get()->get_code()) + ";\n";
-		code += g_shaderManager->use_shader(m_usingShaders.back()->get(), this)->mode;
+		code += g_shaderManager->use_shader(m_usingShaders.back()->get(), usingShaderId[usingShaderId.size()-1], this)->mode;
 
 		String funcCode[MAX_FUNC];
 		ShaderParseData* pData;
 		String head;
-		for (auto e = m_usingShaders.front(); e; e = e->next())
+		int i = 0;
+		for (auto e = m_usingShaders.front(); e; e = e->next(), ++i)
 		{
-			pData = g_shaderManager->use_shader(e->get(), this);
+			head = g_shaderManager->get_shader_key(e->get(), usingShaderId[i]);
+			pData = g_shaderManager->use_shader(e->get(), usingShaderId[i], this);
 			code += pData->code;
-			head = String("_") + Variant(e->get()->get_instance_id()) + "_";
 			for (int f = 0; f < MAX_FUNC; ++f)
 			{
 				if (pData->hasFunc[f])
@@ -920,17 +960,22 @@ Shader::Mode MultiShaderMaterial::get_shader_mode() const
 
 void MultiShaderMaterial::_clear()
 {
-	for (int i = 0; i < m_shaders.size(); ++i)
+	int count = m_shaders.size();
+	for (int i = 0; i < count; ++i)
 	{
 		if (m_shaders[i].is_null())
 			continue;
 
+		if (g_shaderManager->has_shader_data(m_shaders[i], m_shaderIds[i]))
+			g_shaderManager->unuse_shader(m_shaders[i], m_shaderIds[i], this);
 		if (m_shaders[i]->is_connected("changed", this, "_unusing_shader_changed"))
 		{
 			m_shaders.ptrw()[i]->disconnect("changed", this, "_unusing_shader_changed");
 		}
 	}
 	m_shaders.clear();
+	m_shaderIds.clear();
+
 }
 
 void MultiShaderMaterial::set_shaders(const Array& p_shaders)
@@ -939,10 +984,21 @@ void MultiShaderMaterial::set_shaders(const Array& p_shaders)
 	int len = p_shaders.size();
 	Ref<Shader> shader;
 	RefPtr refPtr;
+	Map<Ref<Shader>, int> shaderCount;
 	for (int i = 0; i < len; ++i)
 	{
 		shader = p_shaders[i];
 		m_shaders.push_back(shader);
+		if (shaderCount.has(shader))
+		{
+			m_shaderIds.push_back(shaderCount[shader]);
+			++shaderCount[shader];
+		}
+		else
+		{
+			m_shaderIds.push_back(0);
+			shaderCount[shader] = 1;
+		}
 	}
 
 	_update();
@@ -976,9 +1032,41 @@ void MultiShaderMaterial::set_shader(const Ref<Shader>& p_shader, int p_pos)
 	if (p_pos >= count || p_pos < 0)
 		return;
 
+	if (p_shader == m_shaders[p_pos])
+		return;
+
+	if (m_shaders[p_pos].is_valid() && g_shaderManager->has_shader_data(m_shaders[p_pos], m_shaderIds[p_pos]))
+		g_shaderManager->unuse_shader(m_shaders[p_pos], m_shaderIds[p_pos], this);
 	bool isUsing = m_shaders[p_pos].is_valid() && m_usingShaders.find(m_shaders[p_pos]);
-	m_shaders.remove(p_pos);
-	m_shaders.insert(p_pos, p_shader);
+	int max = -1;
+	Set<int> frags;
+	for (int i = 0; i < m_shaders.size(); ++i)
+	{
+		if (m_shaders[i] != p_shader)
+			continue;
+
+		if (max < m_shaderIds[i])
+		{
+			for (int j = max + 1; j < m_shaderIds[i]; ++j)
+			{
+				frags.insert(j);
+			}
+			max = m_shaderIds[i];
+		}
+		else
+		{
+			frags.erase(m_shaderIds[i]);
+		}
+	}
+	m_shaders.ptrw()[p_pos] = p_shader;
+	if (frags.size() > 0)
+	{
+		m_shaderIds.insert(p_pos, frags.front()->get());
+	}
+	else
+	{
+		m_shaderIds.insert(p_pos, max + 1);
+	}
 
 	if (!isUsing)
 	{
@@ -1025,7 +1113,35 @@ void MultiShaderMaterial::insert_shader(const Ref<Shader>& p_shader, int p_pos)
 	if (p_pos > count || p_pos < 0)
 		return;
 
+	int max = -1;
+	Set<int> frags;
+	for (int i = 0; i < m_shaders.size(); ++i)
+	{
+		if (m_shaders[i] != p_shader)
+			continue;
+
+		if (max < m_shaderIds[i])
+		{
+			for (int j = max + 1; j < m_shaderIds[i]; ++j)
+			{
+				frags.insert(j);
+			}
+			max = m_shaderIds[i];
+		}
+		else
+		{
+			frags.erase(m_shaderIds[i]);
+		}
+	}
 	m_shaders.insert(p_pos, p_shader);
+	if (frags.size() > 0)
+	{
+		m_shaderIds.insert(p_pos, frags.front()->get());
+	}
+	else
+	{
+		m_shaderIds.insert(p_pos, max + 1);
+	}
 
 	if (p_shader.is_null())
 		return;
@@ -1046,13 +1162,17 @@ void MultiShaderMaterial::insert_shader(const Ref<Shader>& p_shader, int p_pos)
 	_update();
 }
 
-void MultiShaderMaterial::move_shader(const Ref<Shader>& p_shader, int p_pos)
+void MultiShaderMaterial::move_shader(int p_index, int p_pos)
 {
-	int pos = m_shaders.find(p_shader);
-	if (pos < 0)
+	int count = get_shader_count();
+	if (p_index < 0)
+	{
+		p_index = count + p_index;
+	}
+	if (p_index > count || p_index < 0)
 		return;
 
-	int count = get_shader_count();
+	
 	if (p_pos < 0)
 	{
 		p_pos = count + p_pos + 1;
@@ -1061,8 +1181,12 @@ void MultiShaderMaterial::move_shader(const Ref<Shader>& p_shader, int p_pos)
 		return;
 
 	bool isUsing = m_shaders[p_pos].is_valid() && m_usingShaders.find(m_shaders[p_pos]);
-	m_shaders.remove(pos);
-	m_shaders.insert(p_pos, p_shader);
+	m_shaders.insert(p_pos, m_shaders[p_index]);
+	m_shaderIds.insert(p_pos, m_shaderIds[p_index]);
+	if (p_index > p_pos)
+		p_index -= 1;
+	m_shaders.remove(p_index);
+	m_shaderIds.remove(p_index);
 
 	if (isUsing)
 	{
@@ -1086,29 +1210,7 @@ void MultiShaderMaterial::clear_shader()
 	}
 }
 
-void MultiShaderMaterial::remove_shader(const Ref<Shader>& p_shader)
-{
-	int pos = m_shaders.find(p_shader);
-	if (pos < 0)
-		return;
-
-	m_shaders.remove(pos);
-	if (p_shader.is_valid() && m_usingShaders.find(p_shader))
-	{
-		_update();
-	}
-	else
-	{
-		if (!p_shader->is_connected("changed", this, "_unusing_shader_changed") && m_shaders.find(p_shader) < 0)
-		{
-			Ref<Shader> s = p_shader;
-			s->disconnect("changed", this, "_unusing_shader_changed");
-		}
-		_change_notify("shaders");
-	}
-}
-
-void MultiShaderMaterial::remove_shader_by_index(int p_index)
+void MultiShaderMaterial::remove_shader(int p_index)
 {
 	int count = get_shader_count();
 	if (p_index < 0)
@@ -1120,6 +1222,8 @@ void MultiShaderMaterial::remove_shader_by_index(int p_index)
 		return;
 
 	Ref<Shader> s = m_shaders[p_index];
+	if (m_shaders[p_index].is_valid() && g_shaderManager->has_shader_data(m_shaders[p_index], m_shaderIds[p_index]))
+		g_shaderManager->unuse_shader(m_shaders[p_index], m_shaderIds[p_index], this);
 	m_shaders.remove(p_index);
 	if (s.is_valid() && m_usingShaders.find(s))
 	{
@@ -1135,15 +1239,20 @@ void MultiShaderMaterial::remove_shader_by_index(int p_index)
 	}
 }
 
-void MultiShaderMaterial::set_shader_param(const StringName& p_param, const Variant& p_value, const Ref<Shader>& p_shader)
+void MultiShaderMaterial::set_shader_param(const StringName& p_param, const Variant& p_value, int p_index)
 {
 	if (m_usingShaders.size() <= 0)
 		return;
 
-	Ref<Shader> s = p_shader;
-	if (p_shader == Ref<Shader>())
-		s = m_usingShaders.back()->get();
-	else if (!m_usingShaders.find(p_shader))
+	int count = get_shader_count();
+	if (p_index < 0)
+	{
+		p_index = count + p_index;
+	}
+	if (p_index > count || p_index < 0 || m_shaders[p_index].is_null())
+		return;
+
+	if (!m_usingShaders.find(m_shaders[p_index]))
 		return;
 
 	if (m_usingShaders.size() == 1)
@@ -1152,40 +1261,43 @@ void MultiShaderMaterial::set_shader_param(const StringName& p_param, const Vari
 	}
 	else
 	{
-		String head = String("_") + Variant(p_shader->get_instance_id()) + "_";
+		String head = g_shaderManager->get_shader_key(m_shaders[p_index], m_shaderIds[p_index]);
 		VS::get_singleton()->material_set_param(_get_material(), head + p_param, p_value);
 	}
 	
 	_change_notify();
 }
 
-Variant MultiShaderMaterial::get_shader_param(const StringName& p_param, const Ref<Shader>& p_shader) const
+Variant MultiShaderMaterial::get_shader_param(const StringName& p_param, int p_index) const
 {
 	if (m_usingShaders.size() <= 0)
 		return Variant();
 
-	Ref<Shader> s = p_shader;
-	if (p_shader == Ref<Shader>())
-		s = m_usingShaders.back()->get();
-	else
+	int count = get_shader_count();
+	if (p_index < 0)
 	{
-		bool find = false;
-		for (auto e = m_usingShaders.front(); e; e = e->next())
-		{
-			if (e->get() == p_shader)
-			{
-				find = true;
-				break;
-			}
-		}
-		if (!find)
-			return Variant();
+		p_index = count + p_index;
 	}
+	if (p_index > count || p_index < 0 || m_shaders[p_index].is_null())
+		return Variant();
+
+	bool find = false;
+	for (auto e = m_usingShaders.front(); e; e = e->next())
+	{
+		if (e->get() == m_shaders[p_index])
+		{
+			find = true;
+			break;
+		}
+	}
+	if (!find)
+		return Variant();
+
 
 	if (m_usingShaders.size() == 1)
 		return VS::get_singleton()->material_get_param(_get_material(), p_param);
 
-	String head = String("_") + Variant(p_shader->get_instance_id()) + "_";
+	String head = g_shaderManager->get_shader_key(m_shaders[p_index], m_shaderIds[p_index]);
 	return VS::get_singleton()->material_get_param(_get_material(), head + p_param);
 }
 
@@ -1195,4 +1307,5 @@ MultiShaderMaterial::MultiShaderMaterial()
 
 MultiShaderMaterial::~MultiShaderMaterial()
 {
+	_clear();
 }
