@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MultiShaderMaterial" inherits="Material" version="3.2">
+	<brief_description>
+		Mulitple shaders combined material.
+	</brief_description>
+	<description>
+		This class like [ShaderMaterial] but can set more than one shader. It will combin shaders to new shader internally.
+		[b]Usage with gdscript[/b]
+		[codeblock]
+		func ready():
+		    var m = MultiShaderMaterial.new()
+		    m.set_shader(load("res://first_shader.shader"))
+		    m.set_shader_param("param_name", "value")
+		    m.insert_shader(load("res://second_shader.shader"))
+		    m.set_shader_param("param_name", "value")
+		    material = m
+		[/codeblock]
+		[b]Principle[/b]
+		Shader type(2D, 3D, particle) depends on the first one in valid shaders. Other shaders that type is not same don't use. The render mode depends on the last one in using shaders. If only have one using shader, it will be used directly. If have more than one using shader, it will create new shader that combin the using shaders code. The combination method is rename the three entry functions'(vertex, fragment, light) build in variables with add prefix [i]p_[/i], rename all functions and variables name with add prefix [i]_shader.get_instance_id()_[/i], add using entry functions code that call corresponding entry function.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="clear">
+			<return type="void">
+			</return>
+			<description>
+				Remove all shaders.
+			</description>
+		</method>
+		<method name="get_shader" qualifiers="const">
+			<return type="Shader">
+			</return>
+			<argument index="0" name="index" type="int" default="-1">
+			</argument>
+			<description>
+				Return specify position shader.
+				If [code]index[/code] is negative, [code]index[/code] = shader count + [code]index[/code].
+				If [code]index[/code] is not valid, return null.
+			</description>
+		</method>
+		<method name="get_shader_count" qualifiers="const">
+			<return type="int">
+			</return>
+			<description>
+				Return shader count.
+			</description>
+		</method>
+		<method name="get_shader_param" qualifiers="const">
+			<return type="Variant">
+			</return>
+			<argument index="0" name="param" type="String">
+			</argument>
+			<argument index="1" name="shader" type="Shader" default="null">
+			</argument>
+			<description>
+				Return specify shader's specify uniform variable value.
+				[code]shader[/code] is null mean the last shader in using shader.
+			</description>
+		</method>
+		<method name="insert">
+			<return type="void">
+			</return>
+			<argument index="0" name="shader" type="Shader">
+			</argument>
+			<argument index="1" name="pos" type="int" default="-1">
+			</argument>
+			<description>
+				Insert shader in specify position.
+				If [code]pos[/code] is negative, [code]pos[/code] = shader count + [code]pos[/code] + 1.
+				If [code]pos[/code] is not valid, do nothing.
+			</description>
+		</method>
+		<method name="move">
+			<return type="void">
+			</return>
+			<argument index="0" name="shader" type="Shader">
+			</argument>
+			<argument index="1" name="pos" type="int">
+			</argument>
+			<description>
+				Move specify shader to specify position.
+				If [code]pos[/code] is negative, [code]pos[/code] = shader count + [code]pos[/code] + 1.
+				If [code]pos[/code] is not valid, do nothing.
+				If [code]shader[/code] doesn't exist, do nothing.
+			</description>
+		</method>
+		<method name="remove">
+			<return type="void">
+			</return>
+			<argument index="0" name="shader" type="Shader">
+			</argument>
+			<description>
+				Remove specify shader.
+			</description>
+		</method>
+		<method name="remove_by_index">
+			<return type="void">
+			</return>
+			<argument index="0" name="index" type="int">
+			</argument>
+			<description>
+				Remove specify position shader.
+				If [code]index[/code] is negative, [code]index[/code] = shader count + [code]index[/code].
+				If [code]index[/code] is not valid, do nothing.
+			</description>
+		</method>
+		<method name="set_shader">
+			<return type="void">
+			</return>
+			<argument index="0" name="shader" type="Shader">
+			</argument>
+			<argument index="1" name="pos" type="int" default="-1">
+			</argument>
+			<description>
+				Set specify position shader.
+				If [code]pos[/code] is negative, [code]pos[/code] = shader count + [code]pos[/code].
+				If [code]pos[/code] is not valid, do nothing.
+			</description>
+		</method>
+		<method name="set_shader_param">
+			<return type="void">
+			</return>
+			<argument index="0" name="param" type="String">
+			</argument>
+			<argument index="1" name="value" type="Variant">
+			</argument>
+			<argument index="2" name="shader" type="Shader" default="null">
+			</argument>
+			<description>
+				Set specify shader uniform variable value.
+				[code]shader[/code] is null mean the last shader in using shader.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="shaders" type="Array" setter="set_shaders" getter="get_shaders" default="[  ]">
+			Shaders array.
+		</member>
+	</members>
+	<constants>
+	</constants>
+</class>

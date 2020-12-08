@@ -3,6 +3,7 @@
 #include "modules/regex/regex.h"
 
 MultiShaderMaterial::ShaderManager* MultiShaderMaterial::g_shaderManager = NULL;
+const String SHADER_MAIN_FUNC_NAMES[] = { "vertex", "fragment", "light" };
 
 inline String MultiShaderMaterial::ShaderManager::_get_shader_key(const Ref<Shader>& p_shader)
 {
@@ -137,10 +138,10 @@ int MultiShaderMaterial::ShaderManager::_get_first_pos(const String& p_code, int
 MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse_shader(const Ref<Shader>& p_shader)
 {
 	String code = p_shader->get_code();
-	Shader::Mode type = p_shader->get_mode();
+	VS::ShaderMode type = (VS::ShaderMode)p_shader->get_mode();
 
 	ShaderLanguage parser;
-	Error err = parser.compile(code, ShaderTypes::get_singleton()->get_functions((VS::ShaderMode)type), ShaderTypes::get_singleton()->get_modes((VS::ShaderMode)type), ShaderTypes::get_singleton()->get_types());
+	Error err = parser.compile(code, ShaderTypes::get_singleton()->get_functions(type), ShaderTypes::get_singleton()->get_modes(type), ShaderTypes::get_singleton()->get_types());
 	if (err != OK)
 		return NULL;
 
@@ -183,9 +184,10 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse
 
 	MultiShaderMaterial::ShaderParseData* ret = memnew(MultiShaderMaterial::ShaderParseData);
 	ret->mode = mode;
-	ret->hasVertex = false;
-	ret->hasFragment = false;
-	ret->hasLight = false;
+	for (int i = 0; i < MAX_FUNC; ++i)
+	{
+		ret->hasFunc[i] = false;
+	}
 
 	int len = parser.get_shader()->functions.size();
 	Ref<RegEx> regex = memnew(RegEx);
@@ -194,240 +196,101 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse
 	Array result;
 	String head = String("_") + Variant(p_shader->get_instance_id()) + "_";
 	int start;
+	
+	String fn;
+	bool processed;
 	for (int i = 0; i < len; ++i)
 	{
-		regex->compile(varPrev + String(parser.get_shader()->functions[i].name) + "\\(");
+		fn = parser.get_shader()->functions[i].name;
+		regex->compile(varPrev + fn + "\\(");
 		result = regex->search_all(code);
-		if (parser.get_shader()->functions[i].name == "vertex")
+		processed = false;
+		for (int f = 0; f < MAX_FUNC; ++f)
 		{
-			ret->hasVertex = true;
-			auto builtInVars = ShaderTypes::get_singleton()->get_functions((VS::ShaderMode)type)["vertex"].built_ins;
-			Set<StringName> varNames;
-			_get_node_var_names(parser.get_shader()->functions[i].function->body, 0, varNames, builtInVars);
-			String param;
-			for (auto e = varNames.front(); e; e = e->next())
+			if (fn == SHADER_MAIN_FUNC_NAMES[f])
 			{
-				ret->vertexParams.push_back(e->get());
-				if (param != "")
-					param += ", ";
-
-				param += String("inout ") + ShaderLanguage::get_datatype_name(builtInVars[e->get()].type) + " p_" + e->get();
-			}
-			for (int i = result.size() - 1; i >= 0; --i)
-			{
-				start = dynamic_cast<RegExMatch*>(result[i].operator Object * ())->get_start(0);
-				if (!((code[start] >= 'a' && code[start] <= 'z') || (code[start] >= 'A' && code[start] <= 'Z') || code[start] == '_'))
+				ret->hasFunc[f] = true;
+				auto builtInVars = ShaderTypes::get_singleton()->get_functions(type)[SHADER_MAIN_FUNC_NAMES[f]].built_ins;
+				Set<StringName> varNames;
+				_get_node_var_names(parser.get_shader()->functions[i].function->body, 0, varNames, builtInVars);
+				String param;
+				for (auto e = varNames.front(); e; e = e->next())
 				{
-					++start;
+					ret->params[f].push_back(e->get());
+					if (param != "")
+						param += ", ";
+
+					param += String("inout ") + ShaderLanguage::get_datatype_name(builtInVars[e->get()].type) + " p_" + e->get();
 				}
 
-				if (varNames.size() > 0)
+				// 內建变量名字加p_前綴，使用了的內建变量作为函数參数加入，函数名字加前綴
+				for (int i = result.size() - 1; i >= 0; --i)
 				{
-					int blockStart = code.find("{", start);
-
-					if (blockStart > 0)
+					start = dynamic_cast<RegExMatch*>(result[i].operator Object * ())->get_start(0);
+					if (!((code[start] >= 'a' && code[start] <= 'z') || (code[start] >= 'A' && code[start] <= 'Z') || code[start] == '_'))
 					{
-						int lv = 1;
-						int pos = blockStart + 1;
-						int blockEnd = -1;
-						while (pos < code.length())
+						++start;
+					}
+
+					if (varNames.size() > 0)
+					{
+						int blockStart = code.find("{", start);
+
+						if (blockStart > 0)
 						{
-							if (code[pos] == '{')
+							int lv = 1;
+							int pos = blockStart + 1;
+							int blockEnd = -1;
+							while (pos < code.length())
 							{
-								lv += 1;
-							}
-							else if (code[pos] == '}')
-							{
-								lv -= 1;
-								if (lv == 0)
+								if (code[pos] == '{')
 								{
-									blockEnd = pos;
-									break;
+									lv += 1;
 								}
-							}
-							++pos;
-						}
-						if (blockEnd > 0)
-						{
-							for (auto e = varNames.front(); e; e = e->next())
-							{
-								Ref<RegEx> reg = memnew(RegEx);
-								reg->compile(varPrev + e->get() + varNext);
-								Array r = reg->search_all(code, blockStart, blockEnd);
-								int s;
-								for (int j = r.size() - 1; j >= 0; --j)
+								else if (code[pos] == '}')
 								{
-									s = dynamic_cast<RegExMatch*>(r[j].operator Object * ())->get_start(0);
-									if (!((code[s] >= 'a' && code[s] <= 'z') || (code[s] >= 'A' && code[s] <= 'Z') || code[s] == '_'))
+									lv -= 1;
+									if (lv == 0)
 									{
-										++s;
+										blockEnd = pos;
+										break;
 									}
-									code = code.insert(s, "p_");
-									blockEnd += 2;
+								}
+								++pos;
+							}
+							if (blockEnd > 0)
+							{
+								for (auto e = varNames.front(); e; e = e->next())
+								{
+									Ref<RegEx> reg = memnew(RegEx);
+									reg->compile(varPrev + e->get() + varNext);
+									Array r = reg->search_all(code, blockStart, blockEnd);
+									int s;
+									for (int j = r.size() - 1; j >= 0; --j)
+									{
+										s = dynamic_cast<RegExMatch*>(r[j].operator Object * ())->get_start(0);
+										if (!((code[s] >= 'a' && code[s] <= 'z') || (code[s] >= 'A' && code[s] <= 'Z') || code[s] == '_'))
+										{
+											++s;
+										}
+										code = code.insert(s, "p_");
+										blockEnd += 2;
+									}
 								}
 							}
 						}
 					}
-				}
 
-				code = code.insert(start + strlen("vertex("), param);
-				code = code.insert(start, head);
+					int funcLen = SHADER_MAIN_FUNC_NAMES[f].length() + 1;
+					code = code.insert(start + funcLen, param);
+					code = code.insert(start, head);
+				}
+				processed = true;
+				break;
 			}
 		}
-		else if (parser.get_shader()->functions[i].name == "fragment")
-		{
-			ret->hasFragment = true;
-			auto builtInVars = ShaderTypes::get_singleton()->get_functions((VS::ShaderMode)type)["fragment"].built_ins;
-			Set<StringName> varNames;
-			_get_node_var_names(parser.get_shader()->functions[i].function->body, 0, varNames, builtInVars);
-			String param;
-			for (auto e = varNames.front(); e; e = e->next())
-			{
-				ret->fragmentParams.push_back(e->get());
-				if (param != "")
-					param += ", ";
-
-				param += String("inout ") + ShaderLanguage::get_datatype_name(builtInVars[e->get()].type) + " p_" + e->get();
-			}
-			for (int i = result.size() - 1; i >= 0; --i)
-			{
-				start = dynamic_cast<RegExMatch*>(result[i].operator Object * ())->get_start(0);
-				if (!((code[start] >= 'a' && code[start] <= 'z') || (code[start] >= 'A' && code[start] <= 'Z') || code[start] == '_'))
-				{
-					++start;
-				}
-
-				if (varNames.size() > 0)
-				{
-					int blockStart = code.find("{", start);
-
-					if (blockStart > 0)
-					{
-						int lv = 1;
-						int pos = blockStart + 1;
-						int blockEnd = -1;
-						while (pos < code.length())
-						{
-							if (code[pos] == '{')
-							{
-								lv += 1;
-							}
-							else if (code[pos] == '}')
-							{
-								lv -= 1;
-								if (lv == 0)
-								{
-									blockEnd = pos;
-									break;
-								}
-							}
-							++pos;
-						}
-						if (blockEnd > 0)
-						{
-							for (auto e = varNames.front(); e; e = e->next())
-							{
-								Ref<RegEx> reg = memnew(RegEx);
-								reg->compile(varPrev + e->get() + varNext);
-								Array r = reg->search_all(code, blockStart, blockEnd);
-								int s;
-								for (int j = r.size() - 1; j >= 0; --j)
-								{
-									s = dynamic_cast<RegExMatch*>(r[j].operator Object * ())->get_start(0);
-									if (!((code[s] >= 'a' && code[s] <= 'z') || (code[s] >= 'A' && code[s] <= 'Z') || code[s] == '_'))
-									{
-										++s;
-									}
-									code = code.insert(s, "p_");
-									blockEnd += 2;
-								}
-							}
-						}
-					}
-				}
-
-				code = code.insert(start + strlen("fragment("), param);
-				code = code.insert(start, head);
-			}
-		}
-		else if (parser.get_shader()->functions[i].name == "light")
-		{
-			ret->hasLight = true;
-			auto builtInVars = ShaderTypes::get_singleton()->get_functions((VS::ShaderMode)type)["light"].built_ins;
-			Set<StringName> varNames;
-			_get_node_var_names(parser.get_shader()->functions[i].function->body, 0, varNames, builtInVars);
-			String param;
-			for (auto e = varNames.front(); e; e = e->next())
-			{
-				ret->lightParams.push_back(e->get());
-				if (param != "")
-					param += ", ";
-
-				param += String("inout ") + ShaderLanguage::get_datatype_name(builtInVars[e->get()].type) + " p_" + e->get();
-			}
-			
-			for (int i = result.size() - 1; i >= 0; --i)
-			{
-				start = dynamic_cast<RegExMatch*>(result[i].operator Object * ())->get_start(0);
-				if (!((code[start] >= 'a' && code[start] <= 'z') || (code[start] >= 'A' && code[start] <= 'Z') || code[start] == '_'))
-				{
-					++start;
-				}
-
-				if (varNames.size() > 0)
-				{
-					int blockStart = code.find("{", start);
-
-					if (blockStart > 0)
-					{
-						int lv = 1;
-						int pos = blockStart + 1;
-						int blockEnd = -1;
-						while (pos < code.length())
-						{
-							if (code[pos] == '{')
-							{
-								lv += 1;
-							}
-							else if (code[pos] == '}')
-							{
-								lv -= 1;
-								if (lv == 0)
-								{
-									blockEnd = pos;
-									break;
-								}
-							}
-							++pos;
-						}
-						if (blockEnd > 0)
-						{
-							for (auto e = varNames.front(); e; e = e->next())
-							{
-								Ref<RegEx> reg = memnew(RegEx);
-								reg->compile(varPrev + e->get() + varNext);
-								Array r = reg->search_all(code, blockStart, blockEnd);
-								int s;
-								for (int j = r.size() - 1; j >= 0; --j)
-								{
-									s = dynamic_cast<RegExMatch*>(r[j].operator Object* ())->get_start(0);
-									if (!((code[s] >= 'a' && code[s] <= 'z') || (code[s] >= 'A' && code[s] <= 'Z') || code[s] == '_'))
-									{
-										++s;
-									}
-									code = code.insert(s, "p_");
-									blockEnd += 2;
-								}
-							}
-						}
-					}
-				}
-				
-				code = code.insert(start + strlen("light("), param);
-				code = code.insert(start, head);
-			}
-		}
-		else
+		
+		if (!processed)
 		{
 			for (int i = result.size() - 1; i >= 0; --i)
 			{
@@ -440,43 +303,36 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse
 			}
 		}
 	}
-	if (!ret->hasVertex && !ret->hasFragment && !ret->hasLight)
+
+	processed = false;
+	for (int f = 0; f < MAX_FUNC; ++f)
+	{
+		if (ret->hasFunc[f])
+		{
+			processed = true;
+			break;
+		}
+	}
+	if (!processed)
 		return NULL;
 
-	Vector<StringName> vars;
-
+	Set<StringName> vars;
 	for (auto e = parser.get_shader()->varyings.front(); e; e = e->next())
 	{
-		regex->compile(varPrev + String(e->key()) + varNext);
-		result = regex->search_all(code);
-		for (int i = result.size() - 1; i >= 0; i--)
-		{
-			start = dynamic_cast<RegExMatch*>(result[i].operator Object * ())->get_start(0);
-			if (!((code[start] >= 'a' && code[start] <= 'z') || (code[start] >= 'A' && code[start] <= 'Z') || code[start] == '_'))
-			{
-				++start;
-			}
-
-			code = code.insert(start, head);
-		}
+		vars.insert(e->key());
 	}
 	for (auto e = parser.get_shader()->constants.front(); e; e = e->next())
 	{
-		regex->compile(varPrev + String(e->key()) + varNext);
-		result = regex->search_all(code);
-		for (int i = result.size() - 1; i >= 0; i--)
-		{
-			start = dynamic_cast<RegExMatch*>(result[i].operator Object * ())->get_start(0);
-			if (!((code[start] >= 'a' && code[start] <= 'z') || (code[start] >= 'A' && code[start] <= 'Z') || code[start] == '_'))
-			{
-				++start;
-			}
-			code = code.insert(start, head);
-		}
+		vars.insert(e->key());
 	}
 	for (auto e = parser.get_shader()->uniforms.front(); e; e = e->next())
 	{
-		regex->compile(varPrev + String(e->key()) + varNext);
+		vars.insert(e->key());
+	}
+
+	for (auto e = vars.front(); e; e = e->next())
+	{
+		regex->compile(varPrev + e->get() + varNext);
 		result = regex->search_all(code);
 		for (int i = result.size() - 1; i >= 0; i--)
 		{
@@ -767,19 +623,16 @@ void MultiShaderMaterial::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_shader", "shader", "pos"), &MultiShaderMaterial::set_shader, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("get_shader", "index"), &MultiShaderMaterial::get_shader, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("get_shader_count"), &MultiShaderMaterial::get_shader_count);
-	ClassDB::bind_method(D_METHOD("insert_shader", "shader", "pos"), &MultiShaderMaterial::insert_shader, DEFVAL(-1));
-	ClassDB::bind_method(D_METHOD("move_shader", "shader", "pos"), &MultiShaderMaterial::move_shader);
-	ClassDB::bind_method(D_METHOD("remove_shader", "shader"), &MultiShaderMaterial::remove_shader);
-	ClassDB::bind_method(D_METHOD("remove_shader_by_index", "index"), &MultiShaderMaterial::remove_shader_by_index);
+	ClassDB::bind_method(D_METHOD("insert", "shader", "pos"), &MultiShaderMaterial::insert_shader, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("move", "shader", "pos"), &MultiShaderMaterial::move_shader);
+	ClassDB::bind_method(D_METHOD("clear"), &MultiShaderMaterial::clear_shader);
+	ClassDB::bind_method(D_METHOD("remove", "shader"), &MultiShaderMaterial::remove_shader);
+	ClassDB::bind_method(D_METHOD("remove_by_index", "index"), &MultiShaderMaterial::remove_shader_by_index);
 	ClassDB::bind_method(D_METHOD("set_shader_param", "param", "value", "shader"), &MultiShaderMaterial::set_shader_param, DEFVAL(Ref<Shader>()));
 	ClassDB::bind_method(D_METHOD("get_shader_param", "param", "shader"), &MultiShaderMaterial::get_shader_param, DEFVAL(Ref<Shader>()));
 
-#define TYPE_OBJECT_STRING "17"
-#define PROPERTY_HINT_RESOURCE_TYPE_STRING "17"
-	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "shaders", PROPERTY_HINT_NONE, String(TYPE_OBJECT_STRING) + "/" + PROPERTY_HINT_RESOURCE_TYPE_STRING + ":Shader",
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "shaders", PROPERTY_HINT_NONE, String(Variant(Variant::OBJECT)) + "/" + Variant(PROPERTY_HINT_RESOURCE_TYPE) + ":Shader",
 		PROPERTY_USAGE_DEFAULT), "set_shaders", "get_shaders");
-#undef TYPE_OBJECT_STRING
-#undef PROPERTY_HINT_RESOURCE_TYPE_STRING
 }
 
 StringName MultiShaderMaterial::_get_shader_param_name(const StringName& p_name) const
@@ -1013,7 +866,7 @@ void MultiShaderMaterial::_update()
 		String code = "shader_type " + ShaderLanguage::get_shader_type(m_usingShaders.front()->get()->get_code()) + ";\n";
 		code += g_shaderManager->use_shader(m_usingShaders.back()->get(), this)->mode;
 
-		String vCode, fCode, lCode;
+		String funcCode[MAX_FUNC];
 		ShaderParseData* pData;
 		String head;
 		for (auto e = m_usingShaders.front(); e; e = e->next())
@@ -1021,61 +874,29 @@ void MultiShaderMaterial::_update()
 			pData = g_shaderManager->use_shader(e->get(), this);
 			code += pData->code;
 			head = String("_") + Variant(e->get()->get_instance_id()) + "_";
-			if (pData->hasVertex)
+			for (int f = 0; f < MAX_FUNC; ++f)
 			{
-				vCode += String("\t") + head + "vertex(";
-				int len = pData->vertexParams.size();
-				for (int i = 0; i < len; ++i)
+				if (pData->hasFunc[f])
 				{
-					if (i > 0)
-						vCode += ", ";
-					vCode += pData->vertexParams[i];
+					funcCode[f] += String("\t") + head + SHADER_MAIN_FUNC_NAMES[f] + "(";
+					int len = pData->params[f].size();
+					for (int i = 0; i < len; ++i)
+					{
+						if (i > 0)
+							funcCode[f] += ", ";
+						funcCode[f] += pData->params[f][i];
+					}
+					funcCode[f] += ");\n";
 				}
-				vCode += ");\n";
-			}
-			if (pData->hasFragment)
-			{
-				fCode += String("\t") + head + "fragment(";
-				int len = pData->fragmentParams.size();
-				for (int i = 0; i < len; ++i)
-				{
-					if (i > 0)
-						fCode += ", ";
-					fCode += pData->fragmentParams[i];
-				}
-				fCode += ");\n";
-			}
-			if (pData->hasLight)
-			{
-				lCode += String("\t") + head + "light(";
-				int len = pData->lightParams.size();
-				for (int i = 0; i < len; ++i)
-				{
-					if (i > 0)
-						lCode += ", ";
-					lCode += pData->lightParams[i];
-				}
-				lCode += ");\n";
 			}
 		}
 
-		if (vCode != "")
+		for (int f = 0; f < MAX_FUNC; ++f)
 		{
-			code += "\nvoid vertex() {\n";
-			code += vCode;
-			code += "}\n";
-		}
-		if (fCode != "")
-		{
-			code += "\nvoid fragment() {\n";
-			code += fCode;
-			code += "}\n";
-		}
-		if (lCode != "")
-		{
-			code += "\nvoid light() {\n";
-			code += lCode;
-			code += "}\n";
+			if (funcCode[f] != "")
+			{
+				code += "\nvoid " + SHADER_MAIN_FUNC_NAMES[f] + "() {\n" + funcCode[f] + "}\n";
+			}
 		}
 
 		if (m_shader.is_valid())
@@ -1097,7 +918,7 @@ Shader::Mode MultiShaderMaterial::get_shader_mode() const
 		return Shader::MODE_SPATIAL;
 }
 
-void MultiShaderMaterial::set_shaders(const Array& p_shaders)
+void MultiShaderMaterial::_clear()
 {
 	for (int i = 0; i < m_shaders.size(); ++i)
 	{
@@ -1110,6 +931,11 @@ void MultiShaderMaterial::set_shaders(const Array& p_shaders)
 		}
 	}
 	m_shaders.clear();
+}
+
+void MultiShaderMaterial::set_shaders(const Array& p_shaders)
+{
+	_clear();
 	int len = p_shaders.size();
 	Ref<Shader> shader;
 	RefPtr refPtr;
@@ -1193,7 +1019,7 @@ void MultiShaderMaterial::insert_shader(const Ref<Shader>& p_shader, int p_pos)
 	int count = get_shader_count();
 	if (p_pos < 0)
 	{
-		p_pos = count + p_pos;
+		p_pos = count + p_pos + 1;
 	}
 
 	if (p_pos > count || p_pos < 0)
@@ -1226,6 +1052,14 @@ void MultiShaderMaterial::move_shader(const Ref<Shader>& p_shader, int p_pos)
 	if (pos < 0)
 		return;
 
+	int count = get_shader_count();
+	if (p_pos < 0)
+	{
+		p_pos = count + p_pos + 1;
+	}
+	if (p_pos > count || p_pos < 0)
+		return;
+
 	bool isUsing = m_shaders[p_pos].is_valid() && m_usingShaders.find(m_shaders[p_pos]);
 	m_shaders.remove(pos);
 	m_shaders.insert(p_pos, p_shader);
@@ -1236,6 +1070,18 @@ void MultiShaderMaterial::move_shader(const Ref<Shader>& p_shader, int p_pos)
 	}
 	else
 	{
+		_change_notify("shaders");
+	}
+}
+
+void MultiShaderMaterial::clear_shader()
+{
+	_clear();
+	if (m_usingShaders.size() > 0)
+	{
+		_update();
+	}
+	else {
 		_change_notify("shaders");
 	}
 }
@@ -1300,8 +1146,16 @@ void MultiShaderMaterial::set_shader_param(const StringName& p_param, const Vari
 	else if (!m_usingShaders.find(p_shader))
 		return;
 
-	String head = String("_") + Variant(p_shader->get_instance_id()) + "_";
-	VS::get_singleton()->material_set_param(_get_material(), head + p_param, p_value);
+	if (m_usingShaders.size() == 1)
+	{
+		VS::get_singleton()->material_set_param(_get_material(), p_param, p_value);
+	}
+	else
+	{
+		String head = String("_") + Variant(p_shader->get_instance_id()) + "_";
+		VS::get_singleton()->material_set_param(_get_material(), head + p_param, p_value);
+	}
+	
 	_change_notify();
 }
 
@@ -1327,7 +1181,9 @@ Variant MultiShaderMaterial::get_shader_param(const StringName& p_param, const R
 		if (!find)
 			return Variant();
 	}
-		
+
+	if (m_usingShaders.size() == 1)
+		return VS::get_singleton()->material_get_param(_get_material(), p_param);
 
 	String head = String("_") + Variant(p_shader->get_instance_id()) + "_";
 	return VS::get_singleton()->material_get_param(_get_material(), head + p_param);
@@ -1339,5 +1195,4 @@ MultiShaderMaterial::MultiShaderMaterial()
 
 MultiShaderMaterial::~MultiShaderMaterial()
 {
-
 }

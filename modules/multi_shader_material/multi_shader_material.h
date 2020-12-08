@@ -9,16 +9,19 @@ class MultiShaderMaterial : public Material
 	GDCLASS(MultiShaderMaterial, Material);
 
 protected:
+	enum ShaderFunc
+	{
+		VERTEX = 0,
+		FRAGMENT,
+		LIGHT,
+		MAX_FUNC
+	};
 	typedef struct _ShaderParseData
 	{
-		bool hasVertex;						// 是否有顶点函数
-		Vector<StringName> vertexParams;	// 顶点函数用的內建变量名字，作为函数參数傳入
-		bool hasFragment;					// 是否有片段函数
-		Vector<StringName> fragmentParams;	// 片段函数用的內建变量名字，作为函数參数傳入
-		bool hasLight;						// 是否有灯函数
-		Vector<StringName> lightParams;		// 灯函数用的內建变量名字，作为函数參数傳入
-		String code;						// 去除shader_type和render_mode的代码
-		String mode;						// render_mode的代码
+		bool hasFunc[MAX_FUNC];					// 是否有顶点函数、片段函数、灯函数
+		Vector<StringName> params[MAX_FUNC];	// 顶点函数、片段函数、灯函数用的內建变量名字，作为函数參数傳入
+		String code;							// 去除shader_type和render_mode的轉換代码
+		String mode;							// render_mode的代码
 	}ShaderParseData;
 
 public:
@@ -82,6 +85,7 @@ protected:
 	Variant property_get_revert(const String& p_name);
 
 	void _update();
+	void _clear();
 public:
 	static ShaderManager*& get_shader_manager();
 
@@ -97,8 +101,9 @@ public:
 	int get_shader_count() const;									// 返回着色器數量
 	void insert_shader(const Ref<Shader>& p_shader, int p_pos);		// 在指定位置插入着色器
 	void move_shader(const Ref<Shader>& p_shader, int p_pos);		// 移动着色器到指定位置
+	void clear_shader();											// 刪除全部着色器
 	void remove_shader(const Ref<Shader>& p_shader);				// 移除指定着色器
-	void remove_shader_by_index(int p_index);						// 移除指定位置的着色器	
+	void remove_shader_by_index(int p_index);						// 移除指定位置的着色器
 	void set_shader_param(const StringName& p_param, const Variant& p_value, const Ref<Shader>& p_shader);
 	Variant get_shader_param(const StringName& p_param, const Ref<Shader>& p_shader) const;
 
