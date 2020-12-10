@@ -1,0 +1,209 @@
+[gd_scene load_steps=14 format=2]
+
+[ext_resource path="res://font/normalFont.tres" type="DynamicFont" id=1]
+[ext_resource path="res://icon.png" type="Texture" id=2]
+[ext_resource path="res://light.png" type="Texture" id=3]
+[ext_resource path="res://scaleShaderBtn.gd" type="Script" id=4]
+[ext_resource path="res://shadersHbox.gd" type="Script" id=5]
+[ext_resource path="res://testMSM.gd" type="Script" id=6]
+[ext_resource path="res://noneShaderBtn.gd" type="Script" id=7]
+[ext_resource path="res://shaderPanel.gd" type="Script" id=8]
+[ext_resource path="res://3DShaderBtn.gd" type="Script" id=9]
+[ext_resource path="res://particleShaderBtn.gd" type="Script" id=10]
+[ext_resource path="res://grayShaderBtn.gd" type="Script" id=11]
+
+[sub_resource type="Theme" id=1]
+default_font = ExtResource( 1 )
+
+[sub_resource type="ButtonGroup" id=2]
+
+[node name="testMSM" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme = SubResource( 1 )
+script = ExtResource( 6 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = 8.0
+margin_top = 8.0
+margin_right = -8.0
+margin_bottom = -8.0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+margin_right = 1008.0
+margin_bottom = 544.0
+size_flags_vertical = 3
+custom_constants/separation = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer"]
+margin_right = 330.0
+margin_bottom = 544.0
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/VBoxContainer"]
+margin_right = 330.0
+margin_bottom = 24.0
+rect_min_size = Vector2( 100, 0 )
+text = "Button"
+align = 1
+valign = 1
+
+[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer/VBoxContainer"]
+margin_top = 28.0
+margin_right = 330.0
+margin_bottom = 544.0
+rect_min_size = Vector2( 100, 0 )
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Button" type="Button" parent="VBoxContainer/HBoxContainer/VBoxContainer/Control"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+margin_left = -38.0
+margin_top = -15.0
+margin_right = 38.0
+margin_bottom = 15.0
+size_flags_horizontal = 4
+size_flags_vertical = 4
+text = "我是按鈕"
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="VBoxContainer/HBoxContainer"]
+margin_left = 338.0
+margin_right = 669.0
+margin_bottom = 544.0
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/VBoxContainer2"]
+margin_right = 331.0
+margin_bottom = 24.0
+rect_min_size = Vector2( 100, 0 )
+text = "TextureRect"
+align = 1
+valign = 1
+
+[node name="img" type="TextureRect" parent="VBoxContainer/HBoxContainer/VBoxContainer2"]
+margin_top = 28.0
+margin_right = 331.0
+margin_bottom = 544.0
+rect_min_size = Vector2( 0, 100 )
+size_flags_vertical = 3
+texture = ExtResource( 2 )
+stretch_mode = 4
+
+[node name="VBoxContainer3" type="VBoxContainer" parent="VBoxContainer/HBoxContainer"]
+margin_left = 677.0
+margin_right = 1008.0
+margin_bottom = 544.0
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/VBoxContainer3"]
+margin_right = 331.0
+margin_bottom = 24.0
+rect_min_size = Vector2( 100, 0 )
+text = "Sprite"
+align = 1
+valign = 1
+
+[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer/VBoxContainer3"]
+margin_top = 28.0
+margin_right = 331.0
+margin_bottom = 544.0
+size_flags_vertical = 3
+
+[node name="Sprite" type="Sprite" parent="VBoxContainer/HBoxContainer/VBoxContainer3/Control"]
+light_mask = 2
+position = Vector2( 168, 251 )
+texture = ExtResource( 2 )
+
+[node name="Light2D" type="Light2D" parent="VBoxContainer/HBoxContainer/VBoxContainer3/Control/Sprite"]
+texture = ExtResource( 3 )
+range_item_cull_mask = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
+margin_top = 548.0
+margin_right = 1008.0
+margin_bottom = 548.0
+scroll_vertical_enabled = false
+
+[node name="Panel" type="Panel" parent="VBoxContainer/ScrollContainer"]
+margin_right = 1008.0
+size_flags_horizontal = 3
+script = ExtResource( 8 )
+
+[node name="shadersHbox" type="HBoxContainer" parent="VBoxContainer/ScrollContainer/Panel"]
+margin_right = 1008.0
+margin_bottom = 32.0
+rect_min_size = Vector2( 0, 32 )
+size_flags_horizontal = 3
+script = ExtResource( 5 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+buttonGroup = SubResource( 2 )
+
+[node name="shaderToolsHbox" type="HBoxContainer" parent="VBoxContainer"]
+margin_top = 552.0
+margin_right = 1008.0
+margin_bottom = 584.0
+custom_constants/separation = 8
+
+[node name="Label" type="Label" parent="VBoxContainer/shaderToolsHbox"]
+margin_top = 4.0
+margin_right = 64.0
+margin_bottom = 28.0
+text = "着色器︰"
+
+[node name="noneBtn" type="CheckBox" parent="VBoxContainer/shaderToolsHbox"]
+margin_left = 72.0
+margin_right = 116.0
+margin_bottom = 32.0
+pressed = true
+group = SubResource( 2 )
+text = "无"
+script = ExtResource( 7 )
+
+[node name="scaleBtn" type="CheckBox" parent="VBoxContainer/shaderToolsHbox"]
+margin_left = 124.0
+margin_right = 184.0
+margin_bottom = 32.0
+group = SubResource( 2 )
+text = "縮放"
+script = ExtResource( 4 )
+
+[node name="3DBtn" type="CheckBox" parent="VBoxContainer/shaderToolsHbox"]
+margin_left = 192.0
+margin_right = 241.0
+margin_bottom = 32.0
+group = SubResource( 2 )
+text = "3D"
+script = ExtResource( 9 )
+
+[node name="particleBtn" type="CheckBox" parent="VBoxContainer/shaderToolsHbox"]
+margin_left = 249.0
+margin_right = 309.0
+margin_bottom = 32.0
+group = SubResource( 2 )
+text = "粒子"
+script = ExtResource( 10 )
+
+[node name="grayBtn" type="CheckBox" parent="VBoxContainer/shaderToolsHbox"]
+margin_left = 317.0
+margin_right = 377.0
+margin_bottom = 32.0
+group = SubResource( 2 )
+text = "灰度"
+script = ExtResource( 11 )
+[connection signal="sort_children" from="VBoxContainer/ScrollContainer/Panel/shadersHbox" to="VBoxContainer/ScrollContainer/Panel" method="_on_shadersHbox_sort_children"]

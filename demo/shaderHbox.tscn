@@ -1,0 +1,38 @@
+[gd_scene load_steps=3 format=2]
+
+[ext_resource path="res://shaderHbox.gd" type="Script" id=1]
+[ext_resource path="res://swapIcon.png" type="Texture" id=2]
+
+[node name="shaderHbox" type="HBoxContainer"]
+margin_right = 78.0
+margin_bottom = 60.0
+script = ExtResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="swapBtn" type="Button" parent="."]
+visible = false
+margin_right = 28.0
+margin_bottom = 60.0
+mouse_filter = 1
+icon = ExtResource( 2 )
+
+[node name="vbox" type="VBoxContainer" parent="."]
+margin_right = 24.0
+margin_bottom = 60.0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="CheckBox" type="CheckBox" parent="vbox"]
+margin_right = 24.0
+margin_bottom = 24.0
+mouse_filter = 1
+pressed = true
+
+[node name="HSeparator" type="HSeparator" parent="vbox"]
+margin_top = 28.0
+margin_right = 24.0
+margin_bottom = 32.0
+mouse_filter = 1

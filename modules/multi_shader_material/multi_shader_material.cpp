@@ -219,7 +219,9 @@ MultiShaderMaterial::ShaderParseData* MultiShaderMaterial::ShaderManager::_parse
 					if (param != "")
 						param += ", ";
 
-					param += String("inout ") + ShaderLanguage::get_datatype_name(builtInVars[e->get()].type) + " p_" + e->get();
+					if (!builtInVars[e->get()].constant)
+						param += String("inout ");
+					param += ShaderLanguage::get_datatype_name(builtInVars[e->get()].type) + " p_" + e->get();
 				}
 
 				// 內建变量名字加p_前綴，使用了的內建变量作为函数參数加入，函数名字加前綴
@@ -390,6 +392,28 @@ void MultiShaderMaterial::ShaderManager::_get_node_var_names(ShaderLanguage::Nod
 		}
 
 	} break;
+	case ShaderLanguage::Node::TYPE_VARIABLE_DECLARATION: {
+		ShaderLanguage::VariableDeclarationNode* vdnode = (ShaderLanguage::VariableDeclarationNode*)p_node;
+
+		for (int i = 0; i < vdnode->declarations.size(); i++) {
+			if (vdnode->declarations[i].initializer) {
+				_get_node_var_names(vdnode->declarations[i].initializer, p_level, r_var_names, p_builtInVars);
+			}
+		}
+	} break;
+	case ShaderLanguage::Node::TYPE_ARRAY_DECLARATION: {
+
+		ShaderLanguage::ArrayDeclarationNode* adnode = (ShaderLanguage::ArrayDeclarationNode*)p_node;
+
+		for (int i = 0; i < adnode->declarations.size(); i++) {
+			int sz = adnode->declarations[i].initializer.size();
+			if (sz > 0) {
+				for (int j = 0; j < sz; j++) {
+					_get_node_var_names(adnode->declarations[i].initializer[j], p_level, r_var_names, p_builtInVars);
+				}
+			}
+		}
+	} break;
 	case ShaderLanguage::Node::TYPE_OPERATOR:
 	{
 		ShaderLanguage::OperatorNode* onode = (ShaderLanguage::OperatorNode*)p_node;
@@ -427,12 +451,12 @@ void MultiShaderMaterial::ShaderManager::_get_node_var_names(ShaderLanguage::Nod
 
 			ShaderLanguage::VariableNode* vnode = (ShaderLanguage::VariableNode*)onode->arguments[0];
 
-			if (onode->op != ShaderLanguage::OP_CONSTRUCT) {
+			/*if (onode->op == ShaderLanguage::OP_CALL) {
 				if (p_builtInVars.has(vnode->name))
 				{
 					r_var_names.insert(vnode->name);
 				}
-			}
+			}*/
 			for (int i = 1; i < onode->arguments.size(); i++) {
 				_get_node_var_names(onode->arguments[i], p_level, r_var_names, p_builtInVars);
 			}
@@ -505,6 +529,9 @@ void MultiShaderMaterial::ShaderManager::_get_node_var_names(ShaderLanguage::Nod
 	{
 		ShaderLanguage::MemberNode* mnode = (ShaderLanguage::MemberNode*)p_node;
 		_get_node_var_names(mnode->owner, p_level, r_var_names, p_builtInVars);
+	} break;
+	case ShaderLanguage::Node::TYPE_FUNCTION:
+	{
 	} break;
 	}
 }
