@@ -18,6 +18,8 @@ to
 ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "material", PROPERTY_HINT_RESOURCE_TYPE, "ShaderMaterial,CanvasItemMaterial,MultiShaderMaterial"), "set_material", "get_material");
 ```
 
+Compile: [Godot docs](https://docs.godotengine.org/en/stable/development/compiling/index.html)
+
 # Principle
 Shader type(2D, 3D, particle) depends on the first one in valid shaders. Other shaders that type is not same don't use. The render mode depends on the last one in using shaders. If only have one using shader, it will be used directly. If have more than one using shader, it will create new shader that combin the using shaders code. The combination method is rename the three entry functions'(vertex, fragment, light) build in variables with add prefix p_, rename all functions and variables name with add prefix _shader.get_instance_id()_repeat id_, add using entry functions code that call corresponding entry function.
 
